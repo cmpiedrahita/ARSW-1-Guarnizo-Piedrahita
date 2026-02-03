@@ -64,6 +64,11 @@ if (facade.isInBlackListServer(server, ip)) {
 - Con parada temprana: mucho menos que 80,000
 - Sin parada temprana: exactamente 80,000
 
+#### Pantallazos de Implementación Java
+
+![Segundo Análisis 1](img/SegundoAnalisis1.jpeg)
+![Segundo Análisis 2](img/SegundoAnalisis2.jpeg)
+
 ## Implementación en Go
 
 ### Parte I - Introducción a Hilos en Go
