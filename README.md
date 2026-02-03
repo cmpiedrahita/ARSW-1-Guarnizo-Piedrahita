@@ -140,6 +140,8 @@ occurrences := validator.CheckHost("202.24.34.55", 4) // 4 hilos
 ![Análisis 8 hilos](img/Analisis3.jpeg)
 ![Análisis 100 hilos](img/Analisis4.jpeg)
 
+<img width="787" height="302" alt="image" src="https://github.com/user-attachments/assets/b1aee7e7-0712-4231-9130-69f7b365f716" />
+
 
 Como podemos ver varian los threads con vida y el uso de cpu varia entre 0.1 y 5 % de pc
 
