@@ -17,9 +17,9 @@ public class CountThreadsMain {
         CountThread ct3 = new CountThread(200,299);
 
 
-        ct.run();
-        ct2.run();
-        ct3.run();
+        ct.start();
+        ct2.start();
+        ct3.start();
     }
     
 }

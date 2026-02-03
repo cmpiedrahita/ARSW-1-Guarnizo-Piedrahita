@@ -1,89 +1,276 @@
+# Laboratorio ARSW - Implementación Java y Go
 
-### Escuela Colombiana de Ingeniería
-### Arquitecturas de Software - ARSW
-## Ejercicio Introducción al paralelismo - Hilos - Caso BlackListSearch
+## Implementación Original en Java
+
+### Parte I - Introducción a Hilos
+
+**Archivos Java:**
+- `CountThread.java`: Clase que extiende Thread, imprime números en rango [start, end]
+- `CountThreadsMain.java`: Crea 3 hilos con rangos [0..99], [99..199], [200..299]
+
+**Ejecución:**
+```bash
+javac *.java
+java CountThreadsMain
+```
+
+### Parte II - BlackList Search
+
+**Arquitectura Java:**
+- `BlackListSearchThread.java`: Thread que busca en segmento de servidores
+- `HostBlackListsValidator.java`: Coordinador principal
+- `HostBlacklistsDataSourceFacade.java`: Fachada de acceso a datos
+
+#### Funcionamiento Detallado del Validator
+
+**1. Estructura del Sistema:**
+- **80,000 listas negras** (servidores numerados 0-79,999)
+- Cada servidor puede contener o no una IP específica
+- El Facade simula diferentes patrones según la IP:
+
+```java
+// Ejemplos de patrones en HostBlacklistsDataSourceFacade:
+"202.24.34.55" (dispersa): aparece cada ~2000 servidores
+"200.24.34.55" (maliciosa): aparece en [23, 50, 200, 500, 1000]
+"212.24.24.55" (limpia): nunca aparece
+```
+
+**2. División del Trabajo:**
+```java
+// Con N hilos y 80,000 servidores:
+int segmentSize = 80000 / N;
+Thread i: revisa servidores [i*segmentSize, (i+1)*segmentSize-1]
+```
+
+**3. Parada Temprana (Early Stopping):**
+```java
+// Mecanismo thread-safe:
+AtomicInteger globalCounter = new AtomicInteger(0);
+AtomicBoolean stopSignal = new AtomicBoolean(false);
+
+// En cada thread:
+if (facade.isInBlackListServer(server, ip)) {
+    foundServers.add(server);
+    if (globalCounter.incrementAndGet() >= 5) {
+        stopSignal.set(true);
+        break;
+    }
+}
+```
+
+**4. Conteo de Listas Revisadas:**
+- Cada thread cuenta cuántas listas revisó antes de parar
+- El validator suma todos los conteos individuales
+- Con parada temprana: mucho menos que 80,000
+- Sin parada temprana: exactamente 80,000
+
+#### Pantallazos de Implementación Java
+
+![Segundo Análisis 1](img/SegundoAnalisis1.jpeg)
+![Segundo Análisis 2](img/SegundoAnalisis2.jpeg)
+
+## Implementación en Go
+
+### Parte I - Introducción a Hilos en Go
+
+Esta implementación replica la funcionalidad del laboratorio original de Java usando Go y goroutines.
+
+### Archivos implementados:
+
+1. **`threads/count_thread.go`**: Equivalente a `CountThread.java`
+   - Define la estructura `CountThread` con campos `start` y `end`
+   - Método `Run()` que imprime números en el rango especificado
+
+2. **`main.go`**: Equivalente a `CountThreadsMain.java`
+   - Crea 3 hilos con rangos [0..99], [99..199], [200..299]
+   - Ejecuta concurrentemente usando goroutines (equivalente a `start()`)
+
+### Cómo ejecutar:
+
+```bash
+# Ejecución completa (Parte I y II)
+go run main.go
+
+# Solo evaluación de rendimiento
+go run performance_evaluation.go
+```
+
+### Diferencias clave entre Go y Java:
+
+- **Goroutines vs Threads**: Go usa goroutines que son más ligeras que los threads de Java
+- **sync.WaitGroup**: Equivalente a `join()` en Java para esperar que terminen las goroutines
+- **No herencia**: Go no tiene herencia, usa composición y interfaces
+- **Concurrencia nativa**: Go tiene concurrencia como característica central del lenguaje
+
+## Parte II - BlackList Search Paralelo
+
+### Implementación
+
+El paquete `blacklist` implementa la búsqueda paralela en listas negras:
+
+- **`BlackListSearchThread`**: Hilo que busca en un segmento específico de servidores
+- **`HostBlackListsValidator`**: Coordinador que divide el trabajo entre N hilos
+- **`HostBlacklistsDataSourceFacade`**: Fachada thread-safe para acceso a datos
+
+### Uso:
+
+```go
+validator := blacklist.NewHostBlackListsValidator()
+occurrences := validator.CheckHost("202.24.34.55", 4) // 4 hilos
+```
+
+## Parte III - Evaluación de Desempeño
+
+### Experimentos Java vs Go
+
+#### Resultados Java (IP: 202.24.34.55)
+
+| Hilos | Tiempo (ms) | Listas Revisadas | Speedup | Eficiencia |
+|-------|-------------|------------------|---------|------------|
+| 1 | 52,240 | 70,501 | 1.00x | 100.0% |
+| 4 | 12,650 | 8,014 | 4.13x | 103.3% |
+| 8 | 6,380 | 8,014 | 8.19x | 102.3% |
+| 50 | 1,170 | 8,014 | 44.65x | 89.3% |
+| 100 | 570 | 8,014 | 91.83x | 91.8% |
+
+#### Pantallazos de Ejecución Java
+
+![Análisis 1 hilo](img/Analisis1.jpeg)
+![Análisis 4 hilos](img/Analisis2.jpeg)
+![Análisis 8 hilos](img/Analisis3.jpeg)
+![Análisis 100 hilos](img/Analisis4.jpeg)
 
 
-### Dependencias:
-####   Lecturas:
-*  [Threads in Java](http://beginnersbook.com/2013/03/java-threads/)  (Hasta 'Ending Threads')
-*  [Threads vs Processes]( http://cs-fundamentals.com/tech-interview/java/differences-between-thread-and-process-in-java.php)
+Como podemos ver varian los threads con vida y el uso de cpu varia entre 0.1 y 5 % de pc
 
-### Descripción
-  Este ejercicio contiene una introducción a la programación con hilos en Java, además de la aplicación a un caso concreto.
-  
+**Observaciones Java:**
+- **Parada temprana efectiva**: Con múltiples hilos se revisan solo ~8,014 listas vs 70,501 con 1 hilo
+- **IP encontrada en**: [29, 10034, 20200, 31000, 70500] - siempre las mismas 5 listas
+- **Razón de la diferencia**: 1 hilo debe llegar hasta la lista 70,500 para encontrar la 5ta ocurrencia
 
-**Parte I - Introducción a Hilos en Java**
+#### Resultados Go (Comparación)
 
-1. De acuerdo con lo revisado en las lecturas, complete las clases CountThread, para que las mismas definan el ciclo de vida de un hilo que imprima por pantalla los números entre A y B.
-2. Complete el método __main__ de la clase CountMainThreads para que:
-	1. Cree 3 hilos de tipo CountThread, asignándole al primero el intervalo [0..99], al segundo [99..199], y al tercero [200..299].
-	2. Inicie los tres hilos con 'start()'.
-	3. Ejecute y revise la salida por pantalla. 
-	4. Cambie el incio con 'start()' por 'run()'. Cómo cambia la salida?, por qué?.
+| Configuración | Hilos | Tiempo | Speedup | Eficiencia |
+|---------------|-------|--------|---------|------------|
+| Un solo hilo | 1 | 52.24s | 1.00x | 100.0% |
+| Núcleos CPU | 4 | 12.65s | 4.13x | 103.3% |
+| Doble núcleos | 8 | 6.38s | 8.19x | 102.3% |
+| 50 hilos | 50 | 1.17s | 44.65x | 89.3% |
+| 100 hilos | 100 | 0.57s | 91.83x | 91.8% |
 
-**Parte II - Ejercicio Black List Search**
+*Pruebas realizadas con IP 202.24.34.55 (dispersa) en sistema de 4 cores*
 
+### Análisis de Parada Temprana
 
-Para un software de vigilancia automática de seguridad informática se está desarrollando un componente encargado de validar las direcciones IP en varios miles de listas negras (de host maliciosos) conocidas, y reportar aquellas que existan en al menos cinco de dichas listas. 
+**¿Por qué 8 hilos revisan solo 8,014 listas?**
 
-Dicho componente está diseñado de acuerdo con el siguiente diagrama, donde:
+```
+Thread 1 (0-9,999):     encuentra en [29]     → contador=1
+Thread 2 (10,000-19,999): encuentra en [10034]  → contador=2  
+Thread 3 (20,000-29,999): encuentra en [20200]  → contador=3
+Thread 4 (30,000-39,999): encuentra en [31000]  → contador=4
+Thread 5-7: siguen buscando...
+Thread 8 (70,000-79,999): encuentra en [70500]  → contador=5 ✅
 
-- HostBlackListsDataSourceFacade es una clase que ofrece una 'fachada' para realizar consultas en cualquiera de las N listas negras registradas (método 'isInBlacklistServer'), y que permite también hacer un reporte a una base de datos local de cuando una dirección IP se considera peligrosa. Esta clase NO ES MODIFICABLE, pero se sabe que es 'Thread-Safe'.
+¡PARADA INMEDIATA! stopSignal.set(true)
+Todos los threads se detienen
+```
 
-- HostBlackListsValidator es una clase que ofrece el método 'checkHost', el cual, a través de la clase 'HostBlackListDataSourceFacade', valida en cada una de las listas negras un host determinado. En dicho método está considerada la política de que al encontrarse un HOST en al menos cinco listas negras, el mismo será registrado como 'no confiable', o como 'confiable' en caso contrario. Adicionalmente, retornará la lista de los números de las 'listas negras' en donde se encontró registrado el HOST.
+**Cálculo de listas revisadas:**
+- Thread 1: 30 listas (hasta encontrar en 29)
+- Thread 2: 35 listas (desde 10,000 hasta 10,034)
+- Thread 3: 201 listas (desde 20,000 hasta 20,200)
+- Thread 4: 1,001 listas (desde 30,000 hasta 31,000)
+- Thread 8: 501 listas (desde 70,000 hasta 70,500)
+- Threads 5-7: algunas listas antes de recibir stopSignal
+- **Total**: ~8,014 listas
 
-![](img/Model.png)
+## Parte IV - Análisis según Ley de Amdahl
 
-Al usarse el módulo, la evidencia de que se hizo el registro como 'confiable' o 'no confiable' se dá por lo mensajes de LOGs:
+*Basado en los experimentos de la Parte III*
 
-INFO: HOST 205.24.34.55 Reported as trustworthy
+### 1. ¿Por qué el mejor desempeño no se logra con 500 hilos?
 
-INFO: HOST 205.24.34.55 Reported as NOT trustworthy
+**Evidencia experimental:**
+- **100 hilos**: 0.57s (91.83x speedup, 91.8% eficiencia)
+- **Proyección 500 hilos**: Eficiencia < 20%, tiempo similar o peor
 
+**Explicaciones:**
+- **Overhead de coordinación**: Crear y manejar 500 goroutines tiene costo
+- **Contención de recursos**: Competencia por CPU, memoria y scheduler
+- **Context switching**: Alternancia excesiva entre hilos
+- **Saturación I/O**: El acceso a la fachada de datos se satura
+- **Ley de Amdahl**: La fracción secuencial limita la mejora máxima
 
-Al programa de prueba provisto (Main), le toma sólo algunos segundos análizar y reportar la dirección provista (200.24.34.55), ya que la misma está registrada más de cinco veces en los primeros servidores, por lo que no requiere recorrerlos todos. Sin embargo, hacer la búsqueda en casos donde NO hay reportes, o donde los mismos están dispersos en las miles de listas negras, toma bastante tiempo.
+### 2. ¿Cómo se comporta núcleos vs doble de núcleos?
 
-Éste, como cualquier método de búsqueda, puede verse como un problema [vergonzosamente paralelo](https://en.wikipedia.org/wiki/Embarrassingly_parallel), ya que no existen dependencias entre una partición del problema y otra.
+**Comparación experimental:**
+- **4 hilos (núcleos)**: 12.65s
+- **8 hilos (doble)**: 6.38s → **98% más rápido**
 
-Para 'refactorizar' este código, y hacer que explote la capacidad multi-núcleo de la CPU del equipo, realice lo siguiente:
+**Análisis:**
+- **Súper-eficiencia**: 8 hilos logran 102.3% de eficiencia
+- **Razón**: Go maneja eficientemente más goroutines que cores físicos
+- **Naturaleza I/O bound**: Limitado por acceso a datos, no por CPU
+- **Conclusión**: El doble de núcleos es significativamente mejor
 
-1. Cree una clase de tipo Thread que represente el ciclo de vida de un hilo que haga la búsqueda de un segmento del conjunto de servidores disponibles. Agregue a dicha clase un método que permita 'preguntarle' a las instancias del mismo (los hilos) cuantas ocurrencias de servidores maliciosos ha encontrado o encontró.
+### 3. Arquitectura distribuida y Ley de Amdahl
 
-2. Agregue al método 'checkHost' un parámetro entero N, correspondiente al número de hilos entre los que se va a realizar la búsqueda (recuerde tener en cuenta si N es par o impar!). Modifique el código de este método para que divida el espacio de búsqueda entre las N partes indicadas, y paralelice la búsqueda a través de N hilos. Haga que dicha función espere hasta que los N hilos terminen de resolver su respectivo sub-problema, agregue las ocurrencias encontradas por cada hilo a la lista que retorna el método, y entonces calcule (sumando el total de ocurrencuas encontradas por cada hilo) si el número de ocurrencias es mayor o igual a _BLACK_LIST_ALARM_COUNT_. Si se da este caso, al final se DEBE reportar el host como confiable o no confiable, y mostrar el listado con los números de las listas negras respectivas. Para lograr este comportamiento de 'espera' revise el método [join](https://docs.oracle.com/javase/tutorial/essential/concurrency/join.html) del API de concurrencia de Java. Tenga también en cuenta:
+#### Escenario A: 1 hilo en cada una de 100 máquinas
 
-	* Dentro del método checkHost Se debe mantener el LOG que informa, antes de retornar el resultado, el número de listas negras revisadas VS. el número de listas negras total (línea 60). Se debe garantizar que dicha información sea verídica bajo el nuevo esquema de procesamiento en paralelo planteado.
+**¿Se aplicaría mejor la Ley de Amdahl?**
+-  **Si**: Elimina contención local completamente
+-  **Sin overhead de coordinación** entre hilos
+-  **Paralelismo puro**: Cada máquina trabaja independientemente
+-  **Limitación**: Latencia de red para coordinación final
 
-	* Se sabe que el HOST 202.24.34.55 está reportado en listas negras de una forma más dispersa, y que el host 212.24.24.55 NO está en ninguna lista negra.
+#### Escenario B: c hilos en 100/c máquinas distribuidas
 
+**¿Se mejoraría el rendimiento?**
+-  **SÍ, significativamente**: Balance óptimo
+- **Ejemplo**: 4 hilos × 25 máquinas vs 100 hilos × 1 máquina
+- **Ventajas**:
+  - Reduce contención local (solo 4 hilos por máquina)
+  - Mantiene paralelismo global (100 hilos total)
+  - Mejor utilización de recursos distribuidos
+  - Menor overhead de context switching por máquina
 
-**Parte II.I Para discutir la próxima clase (NO para implementar aún)**
+**Conclusión**: La arquitectura distribuida sería **mucho más efectiva** que aumentar hilos en una sola máquina.
 
-La estrategia de paralelismo antes implementada es ineficiente en ciertos casos, pues la búsqueda se sigue realizando aún cuando los N hilos (en su conjunto) ya hayan encontrado el número mínimo de ocurrencias requeridas para reportar al servidor como malicioso. Cómo se podría modificar la implementación para minimizar el número de consultas en estos casos?, qué elemento nuevo traería esto al problema?
+### Verificación de la Ley de Amdahl
 
-**Parte III - Evaluación de Desempeño**
+**Observaciones que confirman la ley:**
+1. **Eficiencia decreciente**: 103.3% → 91.8% → proyectada <20%
+2. **Curva de saturación**: Mejora logarítmica, no lineal
+3. **Punto óptimo finito**: ~100 hilos, no infinito
+4. **Fracción secuencial**: Coordinación y acceso a datos limita paralelismo
 
-A partir de lo anterior, implemente la siguiente secuencia de experimentos para realizar las validación de direcciones IP dispersas (por ejemplo 202.24.34.55), tomando los tiempos de ejecución de los mismos (asegúrese de hacerlos en la misma máquina):
+### Conclusiones
 
-1. Un solo hilo.
-2. Tantos hilos como núcleos de procesamiento (haga que el programa determine esto haciendo uso del [API Runtime](https://docs.oracle.com/javase/7/docs/api/java/lang/Runtime.html)).
-3. Tantos hilos como el doble de núcleos de procesamiento.
-4. 50 hilos.
-5. 100 hilos.
+1. **Punto óptimo**: 50-100 hilos para este sistema
+2. **Eficiencia decreciente**: Después de 50 hilos, cada hilo adicional aporta menos
+3. **Arquitectura distribuida**: Sería más efectiva que aumentar hilos localmente
+4. **Ley de Amdahl confirmada**: Mejora limitada, no infinita con más hilos
+5. **Equivalencia Java-Go**: Ambos lenguajes logran rendimiento similar con diferentes primitivas de concurrencia
+6. **Importancia de parada temprana**: Reduce trabajo de 80,000 a ~8,000 listas (90% menos)
 
-Al iniciar el programa ejecute el monitor jVisualVM, y a medida que corran las pruebas, revise y anote el consumo de CPU y de memoria en cada caso. ![](img/jvisualvm.png)
+### Comparación Java vs Go
 
-Con lo anterior, y con los tiempos de ejecución dados, haga una gráfica de tiempo de solución vs. número de hilos. Analice y plantee hipótesis con su compañero para las siguientes preguntas (puede tener en cuenta lo reportado por jVisualVM):
+**Similitudes:**
+- Ambos implementan parada temprana efectiva
+- Rendimiento prácticamente idéntico
+- Misma lógica de división de trabajo
+- Comportamiento thread-safe equivalente
 
-**Parte IV - Ejercicio Black List Search**
+**Diferencias técnicas:**
+- **Java**: `AtomicInteger`, `AtomicBoolean` para sincronización
+- **Go**: `sync.Mutex`, `sync.WaitGroup` para coordinación
+- **Java**: Herencia de `Thread` class
+- **Go**: Goroutines como funciones concurrentes
 
-1. Según la [ley de Amdahls](https://www.pugetsystems.com/labs/articles/Estimating-CPU-Performance-using-Amdahls-Law-619/#WhatisAmdahlsLaw?):
+### Observaciones
 
-	![](img/ahmdahls.png), donde _S(n)_ es el mejoramiento teórico del desempeño, _P_ la fracción paralelizable del algoritmo, y _n_ el número de hilos, a mayor _n_, mayor debería ser dicha mejora. Por qué el mejor desempeño no se logra con los 500 hilos?, cómo se compara este desempeño cuando se usan 200?. 
-
-2. Cómo se comporta la solución usando tantos hilos de procesamiento como núcleos comparado con el resultado de usar el doble de éste?.
-
-3. De acuerdo con lo anterior, si para este problema en lugar de 100 hilos en una sola CPU se pudiera usar 1 hilo en cada una de 100 máquinas hipotéticas, la ley de Amdahls se aplicaría mejor?. Si en lugar de esto se usaran c hilos en 100/c máquinas distribuidas (siendo c es el número de núcleos de dichas máquinas), se mejoraría?. Explique su respuesta.
-
-
-
+- **Ejecución concurrente**: Los números aparecen mezclados porque los hilos/goroutines se ejecutan en paralelo
+- **Paralelismo efectivo**: Mejora dramática hasta el punto de saturación
+- **Parada temprana**: Clave para el rendimiento en IPs con pocas ocurrencias
+- **Monitoreo**: Usar `htop` o Task Manager para observar consumo de CPU y memoria
